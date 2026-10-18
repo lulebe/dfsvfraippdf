@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#18352d" />
+    <meta name="description" content="Search the DFS VFR AIP and build airport chart PDFs." />
+    <title>VFR Chart Desk</title>
+    <script type="module" crossorigin src="/assets/index-CM6gwTrB.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DgHNLfvY.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="VFR Chart Desk home">
+          <span class="brand-mark"><i data-lucide="navigation"></i></span>
+          <span class="brand-name">VFR<span> / </span>DESK</span>
+        </a>
+        <div class="topbar-status"><span class="status-dot"></span><span id="source-status">CONNECTING TO DFS</span></div>
+        <a class="source-link" href="https://aip.dfs.de/basicVFR/" target="_blank" rel="noreferrer">DFS AIP <i data-lucide="arrow-up-right"></i></a>
+      </header>
+
+      <main>
+        <section class="page-intro">
+          <div><p class="eyebrow">GERMANY <span>/</span> VFR AIP</p><h1>Chart desk</h1></div>
+          <div class="intro-meta"><span class="section-kicker">PUBLICATION EFFECTIVE</span><strong id="publication-date">Loading</strong></div>
+        </section>
+
+        <section class="workspace" aria-label="Airport chart search">
+          <aside class="airport-pane">
+            <div class="pane-heading"><div><p class="section-kicker">DFS VFR AIP</p><h2>Airports <span id="airport-count">--</span></h2></div></div>
+            <label class="search-box"><i data-lucide="search"></i><input id="airport-search" type="search" placeholder="Search name or ICAO" autocomplete="off" aria-label="Search airports" /><kbd>/</kbd></label>
+            <div id="airport-list" class="airport-list"><div class="list-empty"><span class="loading-mark"></span><span>Loading the current DFS airport index</span></div></div>
+            <div class="catalog-footnote"><i data-lucide="refresh-cw"></i><span>Live from the current AIP edition.</span></div>
+          </aside>
+          <section id="airport-detail" class="detail-pane" aria-live="polite"></section>
+        </section>
+
+        <footer class="safety-footer"><i data-lucide="triangle-alert"></i><p><strong>Before flight</strong> Always verify chart currency and operational information against the current official DFS AIP.</p><a href="https://aip.dfs.de/basicVFR/" target="_blank" rel="noreferrer">Open DFS AIP <i data-lucide="arrow-up-right"></i></a></footer>
+      </main>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
