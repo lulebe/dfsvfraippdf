@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const upstreamOrigin = "https://aip.dfs.de";
 const allowedPath = /^\/(?:basicAIP|basicVFR|BasicVFR)\//;
+const allowedReferrerPath = /^\/basicvfr\/[^/]+\/pages\/([a-f\d]{32})\.html$/i;
+const printPagePath = /^\/basicvfr\/print\/[^/]+\/([a-f\d]{32})(?:\/|$)/i;
 const airportConfigPath = /^\/basicvfr\/js\/config\.js$/i;
 const airportConfigTtlMs = 7 * 24 * 60 * 60 * 1000;
 const staticRoot = resolve(dirname(fileURLToPath(import.meta.url)), "dist");
@@ -120,6 +122,33 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  const referrer = requestUrl.searchParams.get("referrer");
+  let referrerUrl;
+  const printPageMatch = sourceUrl.pathname.match(printPagePath);
+  if (printPageMatch && !referrer) {
+    response.writeHead(400).end("DFS print requests require their chart-page referrer");
+    return;
+  }
+  if (referrer) {
+    try {
+      referrerUrl = new URL(referrer);
+    } catch {
+      response.writeHead(400).end("Invalid DFS chart referrer");
+      return;
+    }
+    const referrerMatch = referrerUrl.pathname.match(allowedReferrerPath);
+    if (
+      referrerUrl.origin !== upstreamOrigin
+      || !referrerMatch
+      || referrerUrl.search
+      || referrerUrl.hash
+      || (printPageMatch && printPageMatch[1].toLowerCase() !== referrerMatch[1].toLowerCase())
+    ) {
+      response.writeHead(400).end("Referrer must be a DFS VFR chart page");
+      return;
+    }
+  }
+
   const cacheKey = sourceUrl.href;
   const cacheable = airportConfigPath.test(sourceUrl.pathname);
   const cached = cacheable ? memoryCache.get(cacheKey) : undefined;
@@ -129,9 +158,19 @@ const server = createServer(async (request, response) => {
   }
 
   try {
+    console.debug(`Fetching DFS AIP path: ${sourceUrl.href}`);
     const upstream = await fetch(sourceUrl, {
-      signal: AbortSignal.timeout(25000),
-      headers: { Accept: "text/html,application/xhtml+xml,image/*,*/*;q=0.8" },
+      signal: AbortSignal.timeout(300000),
+      headers: {
+        Accept: "text/html,application/xhtml+xml,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,de;q=0.8",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        ...(referrerUrl ? { Referer: referrerUrl.href } : {}),
+      },
     });
     const finalUrl = new URL(upstream.url);
     if (finalUrl.origin !== upstreamOrigin || !allowedPath.test(finalUrl.pathname)) {

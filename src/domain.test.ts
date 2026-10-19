@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterAirports, formatDate, hasKnownChartDates, latestChartDate, parseAipDate, parseAirportSearchConfig, type ChartDocument } from "./domain";
+import { filterAirports, formatDate, hasKnownChartDates, latestChartDate, parseAipDate, parseAirportSearchConfig, parsePrintPagePath, type ChartDocument } from "./domain";
 
 describe("DFS source parsing", () => {
   it("reads airport labels, stable DFS identifiers, and ICAO codes from the search config", () => {
@@ -32,6 +32,19 @@ describe("DFS source parsing", () => {
     expect(parseAipDate("Effective: 15 OCT 2026\nEDKA Aachen-Merzbrueck 1\n30 APR 2026")).toBe("2026-04-30");
     expect(parseAipDate("No date here")).toBe("");
     expect(formatDate("2026-04-30")).toBe("30 Apr 2026");
+  });
+
+  it("resolves DFS chart pages to their official high-resolution print-page path", () => {
+    expect(parsePrintPagePath(`
+      <script>
+        const myURL = "AD/78C891B1D77C8CAAB2B9502E77F3D53E/EDKA Aachen-Merzbrueck 1";
+      </script>
+    `)).toBe("/basicVFR/print/AD/78C891B1D77C8CAAB2B9502E77F3D53E/EDKA%20Aachen-Merzbrueck%201");
+  });
+
+  it("rejects missing or unsafe DFS print-page paths", () => {
+    expect(() => parsePrintPagePath("<html></html>")).toThrow("did not provide its print-page path");
+    expect(() => parsePrintPagePath('const myURL = "AD/../chart";')).toThrow("print-page path was invalid");
   });
 
   it("reports the newest source chart revision for an airport", () => {

@@ -7,6 +7,7 @@ export interface AirportRecord {
 export interface ChartPageRecord {
   name: string;
   href: string;
+  printPagePath?: string;
 }
 
 export interface ChartDocument extends ChartPageRecord {
@@ -48,6 +49,20 @@ export function parseAipDate(text: string): string {
   if (!latest) return "";
   const month = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"].indexOf(latest[2]) + 1;
   return `${latest[3]}-${String(month).padStart(2, "0")}-${latest[1].padStart(2, "0")}`;
+}
+
+export function parsePrintPagePath(source: string): string {
+  const match = source.match(/\b(?:const|let|var)\s+myURL\s*=\s*("(?:\\.|[^"\\])*")\s*;/);
+  if (!match) throw new Error("The DFS chart page did not provide its print-page path.");
+
+  const pageId = JSON.parse(match[1]) as unknown;
+  if (typeof pageId !== "string") throw new Error("The DFS chart print-page path was invalid.");
+  const segments = pageId.split("/");
+  if (segments.length < 2 || segments.some((segment) => !segment || segment === "." || segment === "..")) {
+    throw new Error("The DFS chart print-page path was invalid.");
+  }
+
+  return `/basicVFR/print/${segments.map(encodeURIComponent).join("/")}`;
 }
 
 export function formatDate(value: string): string {

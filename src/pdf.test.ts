@@ -31,14 +31,16 @@ describe("A4 airport PDF", () => {
   });
 
   it("creates an A4 cover and a separate A4 page for each official chart image", async () => {
+    const progress: Array<[number, number]> = [];
     const bytes = await createAirportPdf("Aachen-Merzbrueck", "EDKA", "2026-10-15", [
       { name: "EDKA 1", href: "", revisionDate: "2026-04-30", imageDataUrl: onePixelPng },
       { name: "EDKA 2", href: "", revisionDate: "2026-06-15", imageDataUrl: onePixelPng },
-    ], new Date("2026-10-19T10:00:00Z"));
+    ], new Date("2026-10-19T10:00:00Z"), (completed, total) => progress.push([completed, total]));
     const document = await PDFDocument.load(bytes);
 
     expect(document.getPageCount()).toBe(3);
     expect(document.getTitle()).toContain("EDKA Aachen-Merzbrueck");
+    expect(progress).toEqual([[1, 2], [2, 2]]);
     for (const page of document.getPages()) {
       expect(page.getWidth()).toBeCloseTo(595.28, 1);
       expect(page.getHeight()).toBeCloseTo(841.89, 1);

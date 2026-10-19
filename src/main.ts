@@ -1,5 +1,5 @@
 import { ArrowUpRight, CalendarDays, Download, FileText, MapPin, Navigation, RefreshCw, Search, TriangleAlert, createIcons } from "lucide";
-import { filterAirports, formatDate, hasKnownChartDates, latestChartDate, parseAipDate, parseAirportSearchConfig, type AirportRecord, type ChartDocument, type ChartPageRecord } from "./domain";
+import { filterAirports, formatDate, hasKnownChartDates, latestChartDate, parseAipDate, parseAirportSearchConfig, parsePrintPagePath, type AirportRecord, type ChartDocument, type ChartPageRecord } from "./domain";
 import { createAirportPdf } from "./pdf";
 import "./style.css";
 
@@ -23,11 +23,20 @@ interface AirportDetails {
   charts: ChartPageRecord[];
 }
 
+interface PdfExportProgress {
+  airportId: string;
+  total: number;
+  completed: number;
+  currentChart: string;
+  phase: "loading" | "building" | "saving";
+}
+
 let airports: AirportRecord[] = [];
 let publicationDate = "";
 let selectedAirportId = "";
 let loadingAirportId = "";
 let loadingRevisionCheckAirportId = "";
+let pdfExportProgress: PdfExportProgress | null = null;
 let airportError = "";
 let toastTimer = 0;
 const detailsCache = new Map<string, AirportDetails>();
@@ -50,8 +59,10 @@ function notify(message: string): void {
   toastTimer = window.setTimeout(() => toast.classList.remove("is-visible"), 3200);
 }
 
-async function fetchSource(path: string): Promise<SourceResponse> {
-  const response = await fetch(`/api/dfs?path=${encodeURIComponent(path)}`);
+async function fetchSource(path: string, referrer?: string): Promise<SourceResponse> {
+  const params = new URLSearchParams({ path });
+  if (referrer) params.set("referrer", referrer);
+  const response = await fetch(`/api/dfs?${params}`);
   if (!response.ok) throw new Error(`DFS request failed (${response.status}).`);
   return {
     text: await response.text(),
@@ -81,10 +92,10 @@ function sourceLinks(document: Document, sourceUrl: string): ChartPageRecord[] {
     .filter((entry) => entry.name && /\/pages\/[A-F0-9]{32}\.html$/i.test(new URL(entry.href).pathname));
 }
 
-function extractImageData(document: Document): string {
-  const image = document.querySelector<HTMLImageElement>("img.pageImage");
+function extractPrintImageData(document: Document): string {
+  const image = document.querySelector<HTMLImageElement>(".pageAIP img");
   const dataUrl = image?.getAttribute("src") ?? "";
-  if (!dataUrl.startsWith("data:image/png;base64,")) throw new Error("A chart page did not contain its expected DFS image.");
+  if (!dataUrl.startsWith("data:image/png;base64,")) throw new Error("A DFS print page did not contain its expected chart image.");
   return dataUrl;
 }
 
@@ -165,6 +176,7 @@ function renderDetail(): void {
 
   const details = detailsCache.get(selectedAirportId);
   if (!details) return;
+  const exportProgress = pdfExportProgress?.airportId === selectedAirportId ? pdfExportProgress : null;
   const loadedCharts = chartCache.get(selectedAirportId);
   const checkedAt = revisionCheckTimes.get(selectedAirportId);
   const revisionsKnown = Boolean(loadedCharts && hasKnownChartDates(loadedCharts));
@@ -205,10 +217,28 @@ function renderDetail(): void {
     </div>
     <div class="chart-section-head"><div><p class="section-kicker">AIRPORT AIP PAGES</p><h3>Charts and documents <span>${String(details.charts.length).padStart(2, "0")}</span></h3></div>
       <div class="chart-actions">
-        <button class="button ${loadedCharts ? "button-secondary" : "button-primary"}" type="button" data-action="check-revisions"><i data-lucide="refresh-cw"></i><span>${loadedCharts ? "Recheck revisions" : "Check latest revisions"}</span></button>
-        ${loadedCharts ? `<button class="button button-primary" type="button" data-action="export-pdf" ${canExport ? "" : "disabled"}><i data-lucide="download"></i><span>Generate A4 PDF</span></button>` : ""}
+        <button class="button ${loadedCharts ? "button-secondary" : "button-primary"}" type="button" data-action="check-revisions" ${pdfExportProgress ? "disabled" : ""}><i data-lucide="refresh-cw"></i><span>${loadedCharts ? "Recheck revisions" : "Check latest revisions"}</span></button>
+        ${loadedCharts ? `<button class="button button-primary" type="button" data-action="export-pdf" ${canExport && !pdfExportProgress ? "" : "disabled"}>${exportProgress ? '<span class="loading-mark button-spinner" aria-hidden="true"></span>' : '<i data-lucide="download"></i>'}<span>${exportProgress ? "Generating PDF..." : "Generate A4 PDF"}</span></button>` : ""}
       </div>
     </div>
+    ${exportProgress ? (() => {
+      const progressPercent = Math.round(exportProgress.completed / exportProgress.total * 100);
+      const status = exportProgress.phase === "loading"
+        ? `Loading chart ${Math.min(exportProgress.completed + 1, exportProgress.total)} of ${exportProgress.total}`
+        : exportProgress.phase === "building"
+          ? "Building PDF pages"
+          : "Finalizing PDF";
+      const detail = exportProgress.phase === "loading"
+        ? exportProgress.currentChart
+        : exportProgress.phase === "building"
+          ? "Embedding full-resolution charts"
+          : "Saving the completed document";
+      return `<div class="pdf-progress" role="status" aria-live="polite">
+        <div class="pdf-progress-heading"><span>${status}</span><strong>${exportProgress.completed} / ${exportProgress.total} ${exportProgress.phase === "loading" ? "loaded" : "pages"}</strong></div>
+        <div class="pdf-progress-track" role="progressbar" aria-label="${exportProgress.phase === "loading" ? "Charts loaded" : "PDF pages prepared"}" aria-valuemin="0" aria-valuemax="${exportProgress.total}" aria-valuenow="${exportProgress.completed}"><span style="width: ${progressPercent}%"></span></div>
+        <small>${escapeHtml(detail)}</small>
+      </div>`;
+    })() : ""}
     <ul class="chart-list">${chartRows}</ul>
     <div class="revision-status ${revisionCheckErrors.has(selectedAirportId) || (loadedCharts && !canExport) ? "is-warning" : ""}">${escapeHtml(revisionStatus)}</div>
     <div class="detail-footnote"><i data-lucide="triangle-alert"></i><span>Review each chart-page revision date before export. Always verify current operational information with DFS.</span></div>`;
@@ -253,7 +283,12 @@ async function checkLatestRevisions(): Promise<void> {
     for (const chartLink of details.charts) {
       const page = await fetchSource(pathFromUrl(chartLink.href));
       const pageDocument = new DOMParser().parseFromString(page.text, "text/html");
-      charts.push({ ...chartLink, revisionDate: parseAipDate(pageDocument.body.innerText), imageDataUrl: extractImageData(pageDocument) });
+      charts.push({
+        ...chartLink,
+        printPagePath: parsePrintPagePath(page.text),
+        revisionDate: parseAipDate(pageDocument.body.innerText),
+        imageDataUrl: "",
+      });
     }
     chartCache.set(airportId, charts);
     revisionCheckTimes.set(airportId, Date.now());
@@ -289,6 +324,7 @@ async function loadIndex(): Promise<void> {
 }
 
 async function exportSelectedAirport(): Promise<void> {
+  if (pdfExportProgress) return;
   const details = detailsCache.get(selectedAirportId);
   if (!details) throw new Error("Airport pages are still loading.");
   const charts = chartCache.get(selectedAirportId);
@@ -299,16 +335,56 @@ async function exportSelectedAirport(): Promise<void> {
     throw new Error("The revision check expired. Check the chart pages again before generating the PDF.");
   }
   if (!hasKnownChartDates(charts)) throw new Error("Every chart page needs a readable revision date before PDF export.");
-  const pdf = await createAirportPdf(details.airport.label, details.airport.icao, publicationDate, charts);
-  const url = URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${details.airport.icao || "VFR"}-charts-A4.pdf`;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  notify("A4 airport PDF generated in your browser.");
+  pdfExportProgress = {
+    airportId: selectedAirportId,
+    total: charts.length,
+    completed: 0,
+    currentChart: charts[0].name,
+    phase: "loading",
+  };
+  renderDetail();
+  try {
+    const chartsWithImages: ChartDocument[] = [];
+    for (const chart of charts) {
+      if (!chart.printPagePath) throw new Error(`The DFS print-page path is missing for ${chart.name}.`);
+      pdfExportProgress.currentChart = chart.name;
+      if (selectedAirportId === pdfExportProgress.airportId) renderDetail();
+      const printPage = await fetchSource(chart.printPagePath, chart.href);
+      const printDocument = new DOMParser().parseFromString(printPage.text, "text/html");
+      chartsWithImages.push({ ...chart, imageDataUrl: extractPrintImageData(printDocument) });
+      pdfExportProgress.completed = chartsWithImages.length;
+      if (selectedAirportId === pdfExportProgress.airportId) renderDetail();
+    }
+
+    pdfExportProgress.phase = "building";
+    pdfExportProgress.completed = 0;
+    if (selectedAirportId === pdfExportProgress.airportId) renderDetail();
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    const pdf = await createAirportPdf(
+      details.airport.label,
+      details.airport.icao,
+      publicationDate,
+      chartsWithImages,
+      new Date(),
+      (completed, total) => {
+        pdfExportProgress!.completed = completed;
+        pdfExportProgress!.phase = completed === total ? "saving" : "building";
+        if (selectedAirportId === pdfExportProgress!.airportId) renderDetail();
+      },
+    );
+    const url = URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${details.airport.icao || "VFR"}-charts-A4.pdf`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify("A4 airport PDF generated in your browser.");
+  } finally {
+    pdfExportProgress = null;
+    renderDetail();
+  }
 }
 
 document.addEventListener("click", (event) => {

@@ -85,6 +85,7 @@ h1 { font-size: 35px; line-height: 1.15; margin: 0; font-weight: 700; }
 .button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border: 1px solid transparent; text-decoration: none; cursor: pointer; font-size: 12px; font-weight: 700; transition: background .16s ease, transform .16s ease; }
 .button:hover:not(:disabled) { transform: translateY(-1px); }
 .button svg { width: 15px; height: 15px; }
+.button-spinner { width: 15px; height: 15px; border-color: #ffffff66; border-top-color: white; }
 .button-primary { color: white; background: var(--green); }
 .button-primary:hover:not(:disabled) { background: #24483d; }
 .button-secondary { color: var(--green); background: white; border-color: var(--line); }
@@ -116,6 +117,12 @@ h1 { font-size: 35px; line-height: 1.15; margin: 0; font-weight: 700; }
 .chart-section-head h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 17px; }
 .chart-section-head h3 span { color: #819087; font: 10px var(--mono); }
 .chart-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.pdf-progress { margin: 0 0 14px; padding: 12px 14px; background: #f7f9f6; border: 1px solid #e9ede8; }
+.pdf-progress-heading { display: flex; justify-content: space-between; gap: 12px; color: #44584d; font-size: 11px; }
+.pdf-progress-heading strong { color: var(--green); font: 10px var(--mono); white-space: nowrap; }
+.pdf-progress-track { height: 6px; margin: 9px 0 7px; overflow: hidden; background: #e2e9e3; }
+.pdf-progress-track span { display: block; height: 100%; background: var(--orange); transition: width .18s ease; }
+.pdf-progress small { display: block; overflow: hidden; color: #7a877f; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .revision-status { margin-top: 12px; color: #718078; font-size: 10px; line-height: 1.5; }
 .revision-status.is-warning { color: #9e4b36; }
 .chart-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }

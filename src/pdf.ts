@@ -32,6 +32,7 @@ export async function createAirportPdf(
   publicationDate: string,
   charts: ChartDocument[],
   generatedAt = new Date(),
+  onChartEmbedded?: (completed: number, total: number) => void,
 ): Promise<Uint8Array> {
   if (charts.length === 0) throw new Error("No chart pages are available for this airport.");
   const document = await PDFDocument.create();
@@ -62,13 +63,14 @@ export async function createAirportPdf(
     x: 48, y: 62, size: 8, font: bold, color: accent, maxWidth: 495,
   });
 
-  for (const chart of charts) {
+  for (const [index, chart] of charts.entries()) {
     const encodedImage = chart.imageDataUrl.split(",", 2)[1];
     if (!encodedImage) throw new Error(`Chart image data is missing for ${chart.name}.`);
     const image = await document.embedPng(Uint8Array.from(atob(encodedImage), (character) => character.charCodeAt(0)));
     const page = document.addPage([A4_PORTRAIT.width, A4_PORTRAIT.height]);
     const placement = getA4ImagePlacement(image.width, image.height);
     page.drawImage(image, { ...placement, rotate: degrees(placement.rotation) });
+    onChartEmbedded?.(index + 1, charts.length);
   }
 
   document.setTitle(`VFR charts - ${icao} ${airportName}`);
